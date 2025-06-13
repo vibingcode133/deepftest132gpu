@@ -1,0 +1,4 @@
+deepface
+pandas
+scikit-learn
+tensorflow[and-cuda]~=2.16.1

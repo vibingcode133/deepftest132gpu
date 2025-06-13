@@ -2,3 +2,4 @@ deepface
 pandas
 scikit-learn
 onnxruntime-gpu
+tf-keras

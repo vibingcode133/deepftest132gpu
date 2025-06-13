@@ -22,11 +22,6 @@ def pil2tensor(image: Image.Image) -> torch.Tensor:
 
 # --- Common Function for Building the Database ---
 def _build_db_logic(directory_path, db_save_path, model_name, detector_backend, force_rebuild):
-    # Ensure TF uses the GPU
-    if 'CUDA_VISIBLE_DEVICES' in os.environ:
-        del os.environ['CUDA_VISIBLE_DEVICES']
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
     if not os.path.isdir(directory_path):
         return (None, f"Error: Directory not found at {directory_path}")
     
@@ -43,7 +38,7 @@ def _build_db_logic(directory_path, db_save_path, model_name, detector_backend, 
         except Exception as e:
             print(f"Could not load DB file, will rebuild. Error: {e}")
 
-    print("Generating new embeddings...")
+    print(f"Generating new embeddings using model: {model_name}")
     all_embeddings_data = []
     image_paths = []
     for ext in ('*.jpg', '*.jpeg', '*.png', '*.bmp', '*.webp'):
@@ -75,8 +70,7 @@ def _build_db_logic(directory_path, db_save_path, model_name, detector_backend, 
             pickle.dump(all_embeddings_data, f)
         status = f"Saved {len(all_embeddings_data)} face embeddings to DB."
     else:
-        status = "No faces were detected in any images (or a TensorFlow/GPU error occurred)."
-        # Return None so the next node knows the DB is empty
+        status = "No faces were detected in any images (or a processing error occurred)."
         return (None, status)
         
     return (all_embeddings_data, status)
@@ -84,16 +78,19 @@ def _build_db_logic(directory_path, db_save_path, model_name, detector_backend, 
 
 # --- Node 1: Build Database on GPU ---
 class FaceDB_BuildEmbeddings_GPU:
-    MODEL_OPTIONS = ["VGG-Face", "Facenet", "Facenet512", "ArcFace", "SFace"]
-    DETECTOR_OPTIONS = ['opencv', 'ssd', 'dlib', 'mtcnn', 'retinaface', 'mediapipe', 'yolov8', 'yunet', 'centerface']
+    # MODIFIED: Changed model order and default to SFace
+    MODEL_OPTIONS = ["SFace", "VGG-Face", "Facenet", "Facenet512", "ArcFace"]
+    DETECTOR_OPTIONS = ['retinaface', 'mtcnn', 'opencv', 'ssd', 'dlib', 'mediapipe', 'yolov8', 'yunet', 'centerface']
     @classmethod
     def INPUT_TYPES(cls):
         return { "required": {
                 "directory_path": ("STRING", {"default": "/data/app/input/target_faces"}),
                 "db_save_path": ("STRING", {"default": "/data/app/output/face_embeddings_db.pkl"}),
-                "model_name": (cls.MODEL_OPTIONS, {"default": "Facenet512"}),
-                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "mtcnn"}),
-                "force_rebuild": ("BOOLEAN", {"default": True}), # Default to True for easier debugging
+                # MODIFIED: Set default to SFace, which uses ONNX and avoids TensorFlow issues
+                "model_name": (cls.MODEL_OPTIONS, {"default": "SFace"}),
+                # MODIFIED: Set default to a reliable detector
+                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
+                "force_rebuild": ("BOOLEAN", {"default": True}),
             } }
     RETURN_TYPES = ("FACE_DB", "STRING",)
     RETURN_NAMES = ("face_database", "status_text",)
@@ -105,15 +102,16 @@ class FaceDB_BuildEmbeddings_GPU:
 
 # --- Node 2: Find Matching Faces ---
 class FaceDB_FindMatches:
-    DETECTOR_OPTIONS = ['opencv', 'ssd', 'dlib', 'mtcnn', 'retinaface', 'mediapipe', 'yolov8', 'yunet', 'centerface']
+    DETECTOR_OPTIONS = ['retinaface', 'mtcnn', 'opencv', 'ssd', 'dlib', 'mediapipe', 'yolov8', 'yunet', 'centerface']
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "face_database": ("FACE_DB",),
                 "source_image": ("IMAGE",),
-                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "mtcnn"}),
-                "similarity_threshold": ("FLOAT", {"default": 50.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                # MODIFIED: Set default to a reliable detector
+                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
+                "similarity_threshold": ("FLOAT", {"default": 40.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "top_n": ("INT", {"default": 10, "min": 1, "max": 1000}),
             }
         }
@@ -132,7 +130,7 @@ class FaceDB_FindMatches:
             no_match_text = "Error: Face database is empty or invalid."
             return (create_blank_image(), create_blank_image(), no_match_text, no_match_text)
 
-        model_name = face_database[0].get('model_name', 'Facenet512')
+        model_name = face_database[0].get('model_name', 'SFace')
         source_pil = tensor2pil(source_image)
         source_np = np.array(source_pil)
 
@@ -150,6 +148,12 @@ class FaceDB_FindMatches:
             return (create_blank_image(), create_blank_image(), error_text, error_text)
 
         matches = []
+        # SFace uses a different distance metric (cosine) and thresholding is different.
+        # A lower threshold is needed compared to Facenet.
+        # This is a bit of a guess, you may need to adjust the similarity_threshold.
+        # Sface distance is 0 (identical) to 2 (different). Similarity = 1 - distance.
+        # A distance of 0.6 is a reasonable threshold. So similarity = (1-0.6)*100 = 40.
+        
         for target_data in face_database:
             distance = dst.find_cosine_distance(np.array(source_embedding), np.array(target_data['embedding']))
             similarity = (1 - distance) * 100
@@ -160,7 +164,7 @@ class FaceDB_FindMatches:
                 matches.append(match_info)
 
         if not matches:
-            no_match_text = f"No matches found above {similarity_threshold:.1f}% threshold."
+            no_match_text = f"No matches found above {similarity_threshold:.1f}% threshold. Try lowering the threshold."
             return (create_blank_image(), create_blank_image(), no_match_text, no_match_text)
 
         sorted_matches_df = pd.DataFrame(matches).sort_values(by='similarity_percentage', ascending=False).reset_index(drop=True)
@@ -170,11 +174,7 @@ class FaceDB_FindMatches:
         
         all_filtered_results_text = f"--- All {len(sorted_matches_df)} Matches > {similarity_threshold:.1f}% ---\n" + sorted_matches_df[['target_image', 'similarity_percentage', 'distance']].to_string()
         
-        print("\n\n==============================================")
-        print("          FACEID SEARCH RESULTS             ")
-        print("==============================================")
-        print(all_filtered_results_text)
-        print("==============================================\n\n")
+        print("\n\n--- FACEID SEARCH RESULTS ---\n", all_filtered_results_text, "\n---------------------------\n")
         
         best_match = sorted_matches_df.iloc[0].to_dict()
         

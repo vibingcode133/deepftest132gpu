@@ -78,7 +78,6 @@ def _build_db_logic(directory_path, db_save_path, model_name, detector_backend, 
 
 # --- Node 1: Build Database on GPU ---
 class FaceDB_BuildEmbeddings_GPU:
-    # MODIFIED: Changed model order and default to SFace
     MODEL_OPTIONS = ["SFace", "VGG-Face", "Facenet", "Facenet512", "ArcFace"]
     DETECTOR_OPTIONS = ['retinaface', 'mtcnn', 'opencv', 'ssd', 'dlib', 'mediapipe', 'yolov8', 'yunet', 'centerface']
     @classmethod
@@ -86,9 +85,7 @@ class FaceDB_BuildEmbeddings_GPU:
         return { "required": {
                 "directory_path": ("STRING", {"default": "/data/app/input/target_faces"}),
                 "db_save_path": ("STRING", {"default": "/data/app/output/face_embeddings_db.pkl"}),
-                # MODIFIED: Set default to SFace, which uses ONNX and avoids TensorFlow issues
                 "model_name": (cls.MODEL_OPTIONS, {"default": "SFace"}),
-                # MODIFIED: Set default to a reliable detector
                 "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
                 "force_rebuild": ("BOOLEAN", {"default": True}),
             } }
@@ -109,7 +106,6 @@ class FaceDB_FindMatches:
             "required": {
                 "face_database": ("FACE_DB",),
                 "source_image": ("IMAGE",),
-                # MODIFIED: Set default to a reliable detector
                 "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
                 "similarity_threshold": ("FLOAT", {"default": 40.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "top_n": ("INT", {"default": 10, "min": 1, "max": 1000}),
@@ -123,7 +119,6 @@ class FaceDB_FindMatches:
     def find_matches(self, face_database, source_image, detector_backend, similarity_threshold, top_n):
         
         def create_blank_image():
-            """ Helper function to create an empty/blank tensor to prevent crashes """
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
 
         if not face_database:
@@ -148,12 +143,6 @@ class FaceDB_FindMatches:
             return (create_blank_image(), create_blank_image(), error_text, error_text)
 
         matches = []
-        # SFace uses a different distance metric (cosine) and thresholding is different.
-        # A lower threshold is needed compared to Facenet.
-        # This is a bit of a guess, you may need to adjust the similarity_threshold.
-        # Sface distance is 0 (identical) to 2 (different). Similarity = 1 - distance.
-        # A distance of 0.6 is a reasonable threshold. So similarity = (1-0.6)*100 = 40.
-        
         for target_data in face_database:
             distance = dst.find_cosine_distance(np.array(source_embedding), np.array(target_data['embedding']))
             similarity = (1 - distance) * 100
@@ -171,13 +160,11 @@ class FaceDB_FindMatches:
         
         top_n_df = sorted_matches_df.head(top_n)
         top_n_results_text = f"--- Top {len(top_n_df)} Matches ---\n" + top_n_df[['target_image', 'similarity_percentage', 'distance']].to_string()
-        
         all_filtered_results_text = f"--- All {len(sorted_matches_df)} Matches > {similarity_threshold:.1f}% ---\n" + sorted_matches_df[['target_image', 'similarity_percentage', 'distance']].to_string()
         
         print("\n\n--- FACEID SEARCH RESULTS ---\n", all_filtered_results_text, "\n---------------------------\n")
         
         best_match = sorted_matches_df.iloc[0].to_dict()
-        
         img_pil = Image.open(best_match['image_path']).convert("RGB")
         img_with_box = img_pil.copy()
         draw = ImageDraw.Draw(img_with_box)
@@ -188,11 +175,10 @@ class FaceDB_FindMatches:
         
         return (pil2tensor(img_pil), pil2tensor(img_with_box), top_n_results_text, all_filtered_results_text)
 
-
 # --- Node Mappings for ComfyUI ---
 NODE_CLASS_MAPPINGS = {
     "FaceDB_BuildEmbeddings_GPU": FaceDB_BuildEmbeddings_GPU,
-    "FaceDB_FindMatches": FaceDB_FindMatches,
+    "FaceDB_FindMatches": FindMatches,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {

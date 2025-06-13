@@ -3,3 +3,4 @@ pandas
 scikit-learn
 onnxruntime-gpu
 tensorflow-cpu
+tf-keras

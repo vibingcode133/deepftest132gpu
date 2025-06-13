@@ -175,10 +175,11 @@ class FaceDB_FindMatches:
         
         return (pil2tensor(img_pil), pil2tensor(img_with_box), top_n_results_text, all_filtered_results_text)
 
+
 # --- Node Mappings for ComfyUI ---
 NODE_CLASS_MAPPINGS = {
     "FaceDB_BuildEmbeddings_GPU": FaceDB_BuildEmbeddings_GPU,
-    "FaceDB_FindMatches": FindMatches,
+    "FaceDB_FindMatches": FaceDB_FindMatches,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {

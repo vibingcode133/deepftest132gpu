@@ -97,7 +97,7 @@ class FaceDB_BuildEmbeddings_GPU:
         return _build_db_logic(**kwargs)
 
 
-# --- Node 2: Find Matching Faces ---
+# --- Node 2: Find Matching Faces (MODIFIED) ---
 class FaceDB_FindMatches:
     DETECTOR_OPTIONS = ['retinaface', 'mtcnn', 'opencv', 'ssd', 'dlib', 'mediapipe', 'yolov8', 'yunet', 'centerface']
     @classmethod
@@ -105,7 +105,8 @@ class FaceDB_FindMatches:
         return {
             "required": {
                 "face_database": ("FACE_DB",),
-                "source_image": ("IMAGE",),
+                # MODIFIED: Changed source_image input to a file path string
+                "source_image_path": ("STRING", {"default": "/data/app/input/1.jpg"}),
                 "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "yolov8"}),
                 "similarity_threshold": ("FLOAT", {"default": 49.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "top_n": ("INT", {"default": 10, "min": 1, "max": 1000}),
@@ -116,7 +117,8 @@ class FaceDB_FindMatches:
     FUNCTION = "find_matches"
     CATEGORY = "FaceID"
 
-    def find_matches(self, face_database, source_image, detector_backend, similarity_threshold, top_n):
+    # MODIFIED: Method signature changed from `source_image` to `source_image_path`
+    def find_matches(self, face_database, source_image_path, detector_backend, similarity_threshold, top_n):
         
         def create_blank_image():
             return torch.zeros(1, 64, 64, 3, dtype=torch.float32)
@@ -125,13 +127,17 @@ class FaceDB_FindMatches:
             no_match_text = "Error: Face database is empty or invalid."
             return (create_blank_image(), create_blank_image(), no_match_text, no_match_text)
 
-        model_name = face_database[0].get('model_name', 'SFace')
-        source_pil = tensor2pil(source_image)
-        source_np = np.array(source_pil)
+        # MODIFIED: Check if the source image file exists
+        if not os.path.exists(source_image_path):
+            error_text = f"Error: Source image not found at path: {source_image_path}"
+            return (create_blank_image(), create_blank_image(), error_text, error_text)
 
+        model_name = face_database[0].get('model_name', 'SFace')
+        
         try:
+            # MODIFIED: Directly use the image path with DeepFace.represent
             source_representations = DeepFace.represent(
-                img_path=source_np, model_name=model_name,
+                img_path=source_image_path, model_name=model_name,
                 detector_backend=detector_backend, enforce_detection=True
             )
             if not source_representations:

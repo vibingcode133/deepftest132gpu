@@ -107,7 +107,7 @@ class FaceDB_FindMatches:
                 "face_database": ("FACE_DB",),
                 "source_image": ("IMAGE",),
                 "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "yolov8"}),
-                "similarity_threshold": ("FLOAT", {"default": 40.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "similarity_threshold": ("FLOAT", {"default": 49.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "top_n": ("INT", {"default": 10, "min": 1, "max": 1000}),
             }
         }

@@ -85,8 +85,8 @@ class FaceDB_BuildEmbeddings_GPU:
         return { "required": {
                 "directory_path": ("STRING", {"default": "/data/app/input/target_faces"}),
                 "db_save_path": ("STRING", {"default": "/data/app/output/face_embeddings_db.pkl"}),
-                "model_name": (cls.MODEL_OPTIONS, {"default": "SFace"}),
-                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
+                "model_name": (cls.MODEL_OPTIONS, {"default": "Facenet512"}),
+                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "yolov8"}),
                 "force_rebuild": ("BOOLEAN", {"default": True}),
             } }
     RETURN_TYPES = ("FACE_DB", "STRING",)
@@ -106,7 +106,7 @@ class FaceDB_FindMatches:
             "required": {
                 "face_database": ("FACE_DB",),
                 "source_image": ("IMAGE",),
-                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "retinaface"}),
+                "detector_backend": (cls.DETECTOR_OPTIONS, {"default": "yolov8"}),
                 "similarity_threshold": ("FLOAT", {"default": 40.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "top_n": ("INT", {"default": 10, "min": 1, "max": 1000}),
             }
